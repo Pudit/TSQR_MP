@@ -18,7 +18,8 @@
  * @param R Output upper triangular matrix (n x n)
  * @param block_size Size of blocks for decomposition (default: 2*n)
  */
-void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int block_size = -1);
+// void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int block_size = -1);
+void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int num_processors);
 
 // void tsqr(double *A, double *Q, double *R, size_t width, size_t height);
 

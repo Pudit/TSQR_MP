@@ -7,6 +7,7 @@ SRC_DIR = src
 INC_DIR = includes
 
 SRCS = main.cpp $(SRC_DIR)/tsqr.cpp $(SRC_DIR)/qr.cpp
+# SRCS = main.cpp $(SRC_DIR)/qr.cpp
 OBJS = $(SRCS:.cpp=.o)
 
 all: $(TARGET)

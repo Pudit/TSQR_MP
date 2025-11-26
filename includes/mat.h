@@ -4,7 +4,28 @@
 #include <math.h>
 #include <iostream>
 
-using Matrix = std::vector<std::vector<double>>;
+struct Matrix 
+{
+    double *ptr;
+    size_t h, w;
+    bool is_transpose;
+
+    Matrix(double *ptr, size_t h, size_t w): ptr(ptr), h(h), w(w), is_transpose(false) {}
+
+    double& operator()(int i, int j)
+    {
+        if (!is_transpose)
+            return ptr[i*w + j];
+        else 
+            return ptr[j*h + i];
+    }
+
+    Matrix T() {
+        Matrix m(ptr, w, h);
+        m.is_transpose = !is_transpose;
+        return m;
+    }
+ };
 
 /*
 matmul 
@@ -14,80 +35,82 @@ params
 return 
     C = A x B = R ^ (m x k) x (k x n) = R ^ (m x n)
 */
-inline Matrix matmul(const Matrix &A, const Matrix &B) {
-    int m = A.size(), k = A[0].size(), n = B[0].size();
+inline void matmul(Matrix A, Matrix B, Matrix C) 
+{
+    size_t m = A.h; 
+    size_t k = A.w;
+    size_t n = B.w;
 
-    // C = R ^ (m x n)
-    Matrix C(m, std::vector<double>(n, 0.0));
+    // Initialize C to zero
+    for (size_t i = 0; i < m; i++) {
+        for (size_t j = 0; j < n; j++) {
+            C(i, j) = 0;
+        }
+    }
 
-    for (int i = 0; i < m; i++) {
-        for (int j = 0; j < n; j++) {
-            for (int t = 0; t < k; t++) {
-                C[i][j] += A[i][t] * B[t][j];
+    // Perform multiplication
+    for (size_t i = 0; i < m; i++) {
+        for (size_t j = 0; j < n; j++) {
+            for (size_t kk = 0; kk < k; kk++) {  // Use kk, iterate over k (not n!)
+                C(i, j) += A(i, kk) * B(kk, j);
             }
         }
     }
-
-    return C;
 }
 
-// transpose A (m x n) -> A.T (n x m)
-inline Matrix transpose(const Matrix &A) {
-    int m = A.size(), n = A[0].size();
+inline std::vector<double> identity(int n) {
+    std::vector<double> v(n*n, 0);
+    
+    Matrix m(v.data(), n, n);
+    for(int i = 0; i < n; i++) m(i, i) = 1;
 
-    Matrix AT(n, std::vector<double>(m));
-
-    for (int i = 0; i < m; i++) {
-        for (int j = 0; j < n; j++) {
-            AT[j][i] = A[i][j];
-        }
-    }
-
-    return AT;
+    return v;
 }
 
-// identity (n x n)
-inline Matrix identity(int n) {
-    Matrix I(n, std::vector<double>(n, 0.f));
+// // identity (n x n)
+// inline Matrix identity(int n) {
+//     Matrix I(n, std::vector<double>(n, 0.f));
 
-    for (int i = 0; i < n; i++) I[i][i] = 1.f;
+//     for (int i = 0; i < n; i++) I[i][i] = 1.f;
 
-    return I;
-}
+//     return I;
+// }
+
 
 // print matrix 
-inline void print_matrix(const Matrix &A) {
-    for (const std::vector<double> &row : A) {
-        for (const double d : row) {
-            std::cout << d << " "; 
+inline void print_matrix( Matrix A) {
+    for (int i = 0; i < A.h; i++) {
+        for (int j = 0; j < A.w; j++) {
+            std::cout << A(i, j) << " ";
         }
         std::cout << "\n";
     }
 }
 
-// 
-inline Matrix partial_diag_multiply(const Matrix &Q0, const Matrix &Q1, const Matrix &Q01) {
-    int m = Q0.size();
-    int n = Q0[0].size();
-    
-    Matrix Q_out(2*m, std::vector<double>(Q01[0].size(), 0.0));
-    // Q01[:m] = matmul(Q0, Q01[:m]);
-    for (int i = 0; i < m; i++) {
-        for (int k = 0; k < n; k++) {
-            for(int j = 0; j < Q01[0].size(); j++) {
-                Q_out[i][j] += Q0[i][k] * Q01[k][j];
-            }
-        }
-    }
 
-    // Q01[m:]
-    for (int i = 0; i < m; i++) {
-        for (int k = 0; k < n; k++) {
-            for(int j = 0; j < Q01[0].size(); j++) {
-                Q_out[i + m][j] += Q1[i][k] * Q01[k + n][j];      
-            }
-        }
-    }
+// 
+// inline Matrix partial_diag_multiply(const Matrix &Q0, const Matrix &Q1, const Matrix &Q01) {
+//     int m = Q0.size();
+//     int n = Q0[0].size();
     
-    return Q_out;
-}
+//     Matrix Q_out(2*m, std::vector<double>(Q01[0].size(), 0.0));
+//     // Q01[:m] = matmul(Q0, Q01[:m]);
+//     for (int i = 0; i < m; i++) {
+//         for (int k = 0; k < n; k++) {
+//             for(int j = 0; j < Q01[0].size(); j++) {
+//                 Q_out[i][j] += Q0[i][k] * Q01[k][j];
+//             }
+//         }
+//     }
+
+//     // Q01[m:]
+//     for (int i = 0; i < m; i++) {
+//         for (int k = 0; k < n; k++) {
+//             for(int j = 0; j < Q01[0].size(); j++) {
+//                 Q_out[i + m][j] += Q1[i][k] * Q01[k + n][j];      
+//             }
+//         }
+//     }
+    
+//     return Q_out;
+// }
