@@ -1,4 +1,5 @@
 #include <iostream>
+#include <mpi.h>
 #include "tsqr.h"
 #include "qr.h"
 
@@ -6,203 +7,114 @@
 
 #include <random>
 
-inline std::vector<double> generate_random_matrix(int m, int n, int seed) {
-    std::mt19937 gen(seed);                     // Mersenne Twister engine
+inline std::vector<double> generate_random_matrix(int m, int n, int seed)
+{
+    std::mt19937 gen(seed); // Mersenne Twister engine
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
     std::vector<double> A(m * n);
 
-    for (int i = 0; i < m * n; ++i) {
+    for (int i = 0; i < m * n; ++i)
+    {
         A[i] = dist(gen);
     }
 
     return A;
 }
 
+int main(int argc, char **argv)
+{
+    MPI_Init(&argc, &argv);
 
+    int rank, world_size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-int main(int argc, char* argv[]) {
-
-    int num_processors = 1;
     int height = 2;
     int width = 2;
-    int random_seed = -1;   // -1 means not provided
+    int random_seed = -1; // -1 means not provided
 
-    for (int i = 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++)
+    {
         std::string arg = argv[i];
 
-        if (arg == "-p" && i + 1 < argc) {
-            num_processors = std::stoi(argv[++i]);
-        }
-        else if (arg == "-h" && i + 1 < argc) {
+        else if (arg == "-h" && i + 1 < argc)
+        {
             height = std::stoi(argv[++i]);
         }
-        else if (arg == "-w" && i + 1 < argc) {
+        else if (arg == "-w" && i + 1 < argc)
+        {
             width = std::stoi(argv[++i]);
         }
-        else if (arg == "-r" && i + 1 < argc) {
+        else if (arg == "-r" && i + 1 < argc)
+        {
             random_seed = std::stoi(argv[++i]);
         }
-        else {
+        else
+        {
             std::cerr << "Unknown or incomplete argument: " << arg << std::endl;
             return 1;
         }
     }
 
-    std::cout << "Processors: " << num_processors << "\n";
-    std::cout << "Height (h): " << height << "\n";
-    std::cout << "Width (w): " << width << "\n";
+    int height_per_rank = height / world_size;
+    std::vector<double> A(height_per_rank * width, 0), init_data;
 
-    
-    // broken
-    // Matrix A = {
-    //     {1, 2},
-    //     {3, 4},
-    //     {5, 6},
-    //     {7, 8},     
-    //     {1, 2},
-    //     {3, 4},
-    //     {5, 6},
-    //     {7, 8}, 
-    // };
+    if (rank == 0)
+    {
+        std::cout << "Processors: " << world_size << "\n";
+        std::cout << "Height (h): " << height << "\n";
+        std::cout << "Width (w): " << width << "\n";
+        // IDK if this is bugged or not :P
+        init_data = generate_random_matrix(height, width, 1);
+    }
 
-    // std::vector<double> A = {
-    //     1, 2,
-    //     3, 4,
-    //     5, 6,
-    //     7, 8,
-    //     // 9, 10,
-    //     // 11, 12,
-    //     // 13, 14,
-    //     // 15, 16,
-    //     // 2352, 235,
-    //     // -12, 12,
-    //     // -1, -2,
-    //     // -3, -4,
-    // };
+    // Scatter data
+    MPI_Scatter(
+        init_data,
+        height_per_rank * width,
+        MPI_DOUBLE,
+        A,
+        height_per_rank * width,
+        MPI_DOUBLE,
+        0,
+        MPI_COMM_WORLD);
 
-    std::vector<double> A = generate_random_matrix(height, width, 1);
+    std::vector<double> Q(height_per_rank * w, 0),
+        R1(2 * w * w, 0),
+        R2(2 * w * w, 0); // allocate double the space to recv
 
-    // std::vector<double> A = {
-    //     1, 1,
-    //     1, 1,
-    //     1, 1,
-    //     1, 1,
-    // };
+    // TODO: reduce A -> R1
 
-    // const int height = 8, width = 2;
+    for (int round = 0; (1 << round) < world_size; round++)
+    {
+        if (rank % (1 << round) != 0)
+            continue;
+        bool is_sending = rank % (1 << (round+1));
+        if(is_sending)
+        {
+            // TODO: send data from start of R1 => rank - (1<<rank)
+        }
+        else
+        {
+            // TODO: recv data into the SECOND half of R1 <= rank + (1<<rank)
+            // TODO: qr factorization from R1 => first half of R2
+            // TODO: swap R1 and R2
+        }
+    }
 
-    // const int num_processors = 1;
+    if(rank==0)
+    {
+        // TODO: print the solution
+    }
 
-    //////////////////////////////////// tsqr
-    std::vector<double> r( width * width, 0.f);
-    std::vector<double> q(height * width, 0.f);
+    // std::vector<double> r(width * width, 0.f);
+    // std::vector<double> q(height * width, 0.f);
 
-    Matrix A_full(A.data(), height, width);
-    Matrix R(r.data(), width, width);
-    Matrix Q(q.data(), height, width);
-    
-    auto start = std::chrono::high_resolution_clock::now();
+    // Matrix A_full(A.data(), height, width);
+    // Matrix R(r.data(), width, width);
+    // Matrix Q(q.data(), height, width);
 
-    tsqr(A_full, Q, R, num_processors);
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    std::cout << "TSQR elapsed time: " << elapsed.count() << " ms\n";
-
+    // tsqr(A_full, Q, R, num_processors);
     // print_matrix(R);
-
-    
-
-    /////////////////////////////// qr
-    
-    // num_processors = 1;
-    // print_matrix(A_full);
-    // printf("----------------\n");
-    // qr(A_full, Q, R);
-    // print_matrix(R);
-
-    // const int h_stride = height / num_processors;
-    // std::vector<double> R1(num_processors * width * width, 0), 
-    //                     R2(num_processors * width * width, 0);
-    // printf("qr testing\n");
-    // for(int i = 0; i < num_processors; i++)
-    // {
-    //     // Allocate Q with correct size: h_stride x width
-    //     std::vector<double> q_tmp(h_stride * width, 0);
-
-    //     Matrix A_slice(&A[i*h_stride*width], h_stride, width),
-    //            R_slice(&R1[i*width*width], width, width),
-    //            Q(&q_tmp[0], h_stride, width);  // Start from index 0
-               
-    //     std::cout << "-------------------------------\nA_slice " << i << " = \n";
-    //     print_matrix(A_slice);
-
-    //     qr(A_slice, Q, R_slice);
-
-    //     std::cout << "\nQ = \n";
-    //     print_matrix(Q);
-
-    //     std::cout << "\nR = \n";
-    //     print_matrix(R_slice);
-        
-    //     // Allocate A_recon with correct size
-    //     std::vector<double> a_recon(h_stride * width, 0);
-    //     Matrix A_recon(&a_recon[0], h_stride, width);
-    //     matmul(Q, R_slice, A_recon);
-    //     std::cout << "\nA_recon = \n";
-    //     print_matrix(A_recon);
-
-    //     std::vector<double> qqt(width * width, 0 );
-    //     std::vector<double> qt(width * width, 0 );
-    //     Matrix QQT(&qqt[0], width, width);
-    //     Matrix QT(&qt[0], width, width);
-    //     QT = Q.T();
-    //     matmul(QT, Q, QQT);
-    //     std::cout << "\nQQT = \n";
-    //     print_matrix(QQT);
-    // }
-
-    // print_matrix
-
-    // int counter = num_processors;
-
-    // while(counter != 1)
-    // {
-    //     // TODO: merge R1 -> R2
-    //     // swap
-    //     R1.swap(R2);
-    // }
-
-    // // B = identity, C = answer
-    // std::vector<double> B = identity(2);
-    // std::vector<double> C(A.size(), 0.f);
-
-    // matmul(Matrix(A.data(), 8, 2), Matrix(B.data(), 2, 2), Matrix(C.data(), 8, 2));
-    // print_matrix(Matrix(C.data(), 8, 2));
-
-
-    // QR(Matrix(A[i*w*h], w, h), Matrix(R1[i*w*w], w, w));
-    // Matrix(A[i*w*h], w, h) m;
-    // m(1, 2) = 3;
-
-
-    
-    
-    // Matrix t= partial_diag_multiply(A,A,A);
-    // print_matrix(t);
-    // exit(0);
-
-    // Matrix Q, R;
-    // tsqr(A, Q, R, 2);
-
-    
-
-    // Matrix QQT = matmul(transpose(Q), Q);
-    // std::cout << "\nQQ.T = \n";
-    // for(auto &row : QQT) {
-    //     for(double x : row) std::cout << x << " ";
-    //     std::cout << "\n";
-    // }
 }
