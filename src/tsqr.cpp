@@ -5,18 +5,21 @@
 #include "tsqr.h"
 #include "qr.h"
 
+#include "omp.h"
+
 Matrix slice_matrix(const Matrix &A, int start_row, int num_rows)
 {
     double *slice_ptr = A.ptr + start_row * A.w;
     return Matrix(slice_ptr, num_rows, A.w);
 }
 
-void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int num_processors) 
+void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int num_processors)
 {
     int m = A.h;
-    int n = A.w; 
+    int n = A.w;
 
     assert((num_processors & (num_processors - 1)) == 0 && "num_processors must be power of 2");
+    
 
     if (m % num_processors != 0)
     {
@@ -29,50 +32,77 @@ void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int num_processors)
     // 2 inw buffers for pingpong
     // store R
     std::vector<double> R_buffer1(num_processors * n * n);
-    std::vector<double> R_buffer2(num_processors * n * n / 2);
+    std::vector<double> R_buffer2(num_processors * n * n);
 
     // store Q
     // TODO:
     std::vector<double> q_tmp(block_height * n);
     Matrix Q_tmp(q_tmp.data(), block_height, n);
-
-    for (int i = 0; i < num_processors; i++) {
-        size_t start_row = i * block_height;
-
-        Matrix A_block = slice_matrix(A, start_row, block_height);
-
-        Matrix R_partial(R_buffer1.data() + i * n, n, n);
-
-        qr(A_block, Q_tmp, R_partial);
-        // print_matrix(R_partial);
-    }
-
     int counter = num_processors;
 
-    double *R_read = R_buffer1.data();
-    double *R_write = R_buffer2.data();
+#pragma omp parallel num_threads(num_processors)
+    {
 
-    while (counter != 1) {
-        int next_counter = counter / 2;
+#pragma omp for
+        for (int i = 0; i < num_processors; i++)
+        {
+            size_t start_row = i * block_height;
 
-        R_write = R_buffer2.data();
+            Matrix A_block = slice_matrix(A, start_row, block_height);
 
-        for (int i = 0; i < next_counter; i++) {
-            Matrix M(R_read + 2 * i * n * n, 2 * n, n);
+            Matrix R_partial(R_buffer1.data() + i * n * n, n, n);
 
-            Matrix R_partial(R_write + i * n * n, n, n);
-            
-            qr(M, Q_tmp, R_partial);
+            qr(A_block, Q_tmp, R_partial);
+            // print_matrix(R_partial);
         }
-        
-        std::swap(R_read, R_write);
-        counter = next_counter;
+        // printf("len\n");
+        // printf("bf p\n");
+
+#pragma omp barrier
+        // #pragma omp single
+        //         {
+        //             printf("R_partial %d:\n", omp_get_thread_num());
+        //             print_matrix(Matrix(R_buffer1.data(), num_processors * n, n));
+        //             printf("-----\n");
+        //         }
+
+        while (counter != 1)
+        {
+            #ifdef DEBUG
+            printf("parallel count %d, counter = %d\n", omp_get_thread_num(), counter);
+            #endif
+
+#pragma omp for
+            for (int i = 0; i < counter / 2; i++)
+            {
+                // printf("i = %d, thread = %d\n", i, omp_get_thread_num());
+                Matrix M(R_buffer1.data() + 2 * i * n * n, 2 * n, n);
+
+                Matrix R_partial(R_buffer2.data() + i * n * n, n, n);
+
+                qr(M, Q_tmp, R_partial);
+                // printf("done qr %d\n", omp_get_thread_num());
+            }
+
+// printf("barrier, counter = %d, omp get thread id = %d\n", counter, omp_get_thread_num());
+#pragma omp barrier
+
+#pragma omp single
+            {
+                R_buffer1.swap(R_buffer2);
+                counter /= 2;
+            }
+        }
+
+
+#pragma omp single
+        {
+            std::memcpy(R.ptr, R_buffer1.data(), n * n * sizeof(double));
+        }
     }
-    
-    std::memcpy(R.ptr, R_read, n * n * sizeof(double));
 }
 
-// void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int block_count) 
+// void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int block_count)
 // {
 //     int m = A.size();
 //     int n = A[0].size();
@@ -92,12 +122,11 @@ void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int num_processors)
 //         // TODO: do QR
 //         // TODO: push into Rs
 //         Matrix Q_partial, R_partial;
-//         qr(A, Q_partial, R_partial);   
+//         qr(A, Q_partial, R_partial);
 //         Rs.push_back(R_partial);
 
 //         Qs.push_back(Q_partial);
 //     }
-
 
 //     while(Rs.size() > 1)
 //     {
@@ -111,13 +140,13 @@ void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int num_processors)
 //             Matrix Q_partial, R_partial;
 //             Matrix M = Rs[i];
 
-//             M.insert(M.end(), Rs[i + 1].begin(), Rs[i + 1].end()); 
+//             M.insert(M.end(), Rs[i + 1].begin(), Rs[i + 1].end());
 
 //             qr(M, Q_partial, R_partial);
 //             new_Rs.push_back(R_partial);
-            
+
 //             Matrix Q_new = partial_diag_multiply(Qs[i], Qs[i+1], Q_partial);
-            
+
 //             new_Qs.push_back(Q_new);
 
 //             // Q_states[i].push_back(Q_partial);
@@ -129,6 +158,5 @@ void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int num_processors)
 
 //     R = Rs[0];
 //     Q = Qs[0];
-    
 
 // }

@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -Iincludes
+CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -Iincludes -fopenmp
 
 TARGET = qr_demo
 

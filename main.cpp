@@ -1,8 +1,59 @@
 #include <iostream>
 #include "tsqr.h"
-// #include "qr.h"
+#include "qr.h"
 
-int main() {
+#include <chrono>
+
+#include <random>
+
+inline std::vector<double> generate_random_matrix(int m, int n, int seed) {
+    std::mt19937 gen(seed);                     // Mersenne Twister engine
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    std::vector<double> A(m * n);
+
+    for (int i = 0; i < m * n; ++i) {
+        A[i] = dist(gen);
+    }
+
+    return A;
+}
+
+
+
+int main(int argc, char* argv[]) {
+
+    int num_processors = 1;
+    int height = 2;
+    int width = 2;
+    int random_seed = -1;   // -1 means not provided
+
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+
+        if (arg == "-p" && i + 1 < argc) {
+            num_processors = std::stoi(argv[++i]);
+        }
+        else if (arg == "-h" && i + 1 < argc) {
+            height = std::stoi(argv[++i]);
+        }
+        else if (arg == "-w" && i + 1 < argc) {
+            width = std::stoi(argv[++i]);
+        }
+        else if (arg == "-r" && i + 1 < argc) {
+            random_seed = std::stoi(argv[++i]);
+        }
+        else {
+            std::cerr << "Unknown or incomplete argument: " << arg << std::endl;
+            return 1;
+        }
+    }
+
+    std::cout << "Processors: " << num_processors << "\n";
+    std::cout << "Height (h): " << height << "\n";
+    std::cout << "Width (w): " << width << "\n";
+
+    
     // broken
     // Matrix A = {
     //     {1, 2},
@@ -14,20 +65,23 @@ int main() {
     //     {5, 6},
     //     {7, 8}, 
     // };
-    std::vector<double> A = {
-        1, 2,
-        3, 4,
-        5, 6,
-        7, 8,
-        9, 10,
-        11, 12,
-        13, 14,
-        15, 16,
-        // 2352, 235,
-        // -12, 12,
-        // -1, -2,
-        // -3, -4,
-    };
+
+    // std::vector<double> A = {
+    //     1, 2,
+    //     3, 4,
+    //     5, 6,
+    //     7, 8,
+    //     // 9, 10,
+    //     // 11, 12,
+    //     // 13, 14,
+    //     // 15, 16,
+    //     // 2352, 235,
+    //     // -12, 12,
+    //     // -1, -2,
+    //     // -3, -4,
+    // };
+
+    std::vector<double> A = generate_random_matrix(height, width, 1);
 
     // std::vector<double> A = {
     //     1, 1,
@@ -36,26 +90,43 @@ int main() {
     //     1, 1,
     // };
 
-    const int height = 8, width = 2;
+    // const int height = 8, width = 2;
 
-    const int num_processors = 1;
+    // const int num_processors = 1;
 
     //////////////////////////////////// tsqr
-    std::vector<double> r(width * width, 0.f);
+    std::vector<double> r( width * width, 0.f);
     std::vector<double> q(height * width, 0.f);
 
     Matrix A_full(A.data(), height, width);
     Matrix R(r.data(), width, width);
     Matrix Q(q.data(), height, width);
     
+    auto start = std::chrono::high_resolution_clock::now();
+
     tsqr(A_full, Q, R, num_processors);
-    print_matrix(R);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    std::cout << "TSQR elapsed time: " << elapsed.count() << " ms\n";
+
+    // print_matrix(R);
+
+    
 
     /////////////////////////////// qr
+    
+    // num_processors = 1;
+    // print_matrix(A_full);
+    // printf("----------------\n");
+    // qr(A_full, Q, R);
+    // print_matrix(R);
+
     // const int h_stride = height / num_processors;
     // std::vector<double> R1(num_processors * width * width, 0), 
     //                     R2(num_processors * width * width, 0);
-
+    // printf("qr testing\n");
     // for(int i = 0; i < num_processors; i++)
     // {
     //     // Allocate Q with correct size: h_stride x width
