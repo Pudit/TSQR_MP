@@ -13,6 +13,74 @@ Matrix slice_matrix(const Matrix &A, int start_row, int num_rows)
     return Matrix(slice_ptr, num_rows, A.w);
 }
 
+void tsqr(std::vector<double> init_data, int world_size, int height, int width) 
+{
+    int height_per_rank = height / world_size;
+    // Scatter data
+    MPI_Scatter(
+        init_data,
+        height_per_rank * width,
+        MPI_DOUBLE,
+        A,
+        height_per_rank * width,
+        MPI_DOUBLE,
+        0,
+        MPI_COMM_WORLD);
+
+    // std::vector<double> Q(height_per_rank * w, 0),
+    //     R1(2 * w * w, 0),
+    //     R2(2 * w * w, 0); // allocate double the space to recv
+
+    std::vector<double> Q(max(2*width, height_per_rank) * width, 0);
+    std::vector<double> R1(2 * width * width, 0);
+    std::vector<double> R2(2 * width * width, 0);
+
+    Matrix A_local(A.data(), height_per_rank, width);
+    Matrix Q_local(Q.data(), height_per_rank, width);
+    Matrix R_local(R1.data(), width, width);
+    
+    qr(A_local, Q_local, R_local);
+
+    for (int round = 0; (1 << round) < world_size; round++)
+    {
+        if (rank % (1 << round) != 0)
+            continue;
+        bool is_sending = rank % (1 << (round+1));
+        
+        if(is_sending)
+        {
+            // TODO: send data from start of R1 => rank - (1<<rank)
+            MPI_Send(R1.data(), width * width, MPI_DOUBLE, rank - (1 << round), 0, MPI_COMM_WORLD);
+        }
+        else
+        {
+            // TODO: recv data into the SECOND half of R1 <= rank + (1<<rank)
+            // TODO: qr factorization from R1 => first half of R2
+            // TODO: swap R1 and R2
+            MPI_Recv(R1.data() + width * width, width * width, MPI_DOUBLE, rank + (1<<rank), 
+                                            0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            Matrix R_stacked(R1.data(), 2 * width, width);
+            Matrix Q_tmp(Q.data(), 2 * width, width); 
+            Matrix R_result(R2.data(), width, width);
+            
+            qr(R_stacked, Q_tmp, R_result);
+            
+            R1.swap(R2);
+        }
+    }
+
+    if (rank == 0)
+    {
+        std::cout << "R = \n";
+        Matrix R_final(R1.data(), width, width);
+        print_matrix(R_final);
+    }
+
+    MPI_Finalize();
+
+}
+
 void tsqr(const Matrix &A, Matrix &Q, Matrix &R, int num_processors)
 {
     int m = A.h;
