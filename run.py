@@ -5,7 +5,8 @@ height = 3200
 for num_thread in [1, 2, 4, 8, 16, 32]:
     for width in [2, 4, 8, 16, 32]:
         # print(num_thread, width)
-        res = subprocess.run(['./qr_demo', '-p', str(num_thread), '-w', str(width), '-h', str(height)], 
+        # mpirun -np 8 ./qr_demo -h 1600 -w 2
+        res = subprocess.run(['mpirun', '-np',  str(num_thread), './qr_demo',  '-w', str(width), '-h', str(height)], 
                         capture_output=True,
                         text=True,)
         # print(res.stdout)

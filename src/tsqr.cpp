@@ -5,7 +5,7 @@
 #include "tsqr.h"
 #include "qr.h"
 
-#include "omp.h"
+#include <mpi.h>
 
 Matrix slice_matrix(const Matrix &A, int start_row, int num_rows)
 {
@@ -16,12 +16,17 @@ Matrix slice_matrix(const Matrix &A, int start_row, int num_rows)
 void tsqr(std::vector<double> init_data, int world_size, int height, int width) 
 {
     int height_per_rank = height / world_size;
+    int rank; 
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    std::vector<double> A(height_per_rank * width, 0);
+
     // Scatter data
     MPI_Scatter(
-        init_data,
+        init_data.data(),
         height_per_rank * width,
         MPI_DOUBLE,
-        A,
+        A.data(),
         height_per_rank * width,
         MPI_DOUBLE,
         0,
@@ -31,7 +36,7 @@ void tsqr(std::vector<double> init_data, int world_size, int height, int width)
     //     R1(2 * w * w, 0),
     //     R2(2 * w * w, 0); // allocate double the space to recv
 
-    std::vector<double> Q(max(2*width, height_per_rank) * width, 0);
+    std::vector<double> Q(std::max(2*width, height_per_rank) * width, 0);
     std::vector<double> R1(2 * width * width, 0);
     std::vector<double> R2(2 * width * width, 0);
 
@@ -49,15 +54,15 @@ void tsqr(std::vector<double> init_data, int world_size, int height, int width)
         
         if(is_sending)
         {
-            // TODO: send data from start of R1 => rank - (1<<rank)
+            // TODO: send data from start of R1 => rank - (1<<round)
             MPI_Send(R1.data(), width * width, MPI_DOUBLE, rank - (1 << round), 0, MPI_COMM_WORLD);
         }
         else
         {
-            // TODO: recv data into the SECOND half of R1 <= rank + (1<<rank)
+            // TODO: recv data into the SECOND half of R1 <= rank + (1<<round)
             // TODO: qr factorization from R1 => first half of R2
             // TODO: swap R1 and R2
-            MPI_Recv(R1.data() + width * width, width * width, MPI_DOUBLE, rank + (1<<rank), 
+            MPI_Recv(R1.data() + width * width, width * width, MPI_DOUBLE, rank + (1 << round), 
                                             0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             Matrix R_stacked(R1.data(), 2 * width, width);

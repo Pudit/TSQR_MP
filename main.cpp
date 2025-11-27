@@ -38,7 +38,7 @@ int main(int argc, char **argv)
     {
         std::string arg = argv[i];
 
-        else if (arg == "-h" && i + 1 < argc)
+        if (arg == "-h" && i + 1 < argc)
         {
             height = std::stoi(argv[++i]);
         }
@@ -70,43 +70,53 @@ int main(int argc, char **argv)
     }
 
     // Scatter data
-    MPI_Scatter(
-        init_data,
-        height_per_rank * width,
-        MPI_DOUBLE,
-        A,
-        height_per_rank * width,
-        MPI_DOUBLE,
-        0,
-        MPI_COMM_WORLD);
+    // MPI_Scatter(
+    //     init_data.data(),
+    //     height_per_rank * width,
+    //     MPI_DOUBLE,
+    //     A.data(),
+    //     height_per_rank * width,
+    //     MPI_DOUBLE,
+    //     0,
+    //     MPI_COMM_WORLD);
+    auto start = std::chrono::high_resolution_clock::now();
 
-    std::vector<double> Q(height_per_rank * w, 0),
-        R1(2 * w * w, 0),
-        R2(2 * w * w, 0); // allocate double the space to recv
+    tsqr(init_data, world_size, height, width);
 
-    // TODO: reduce A -> R1
+    if (rank == 0) {
+        auto end = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    for (int round = 0; (1 << round) < world_size; round++)
-    {
-        if (rank % (1 << round) != 0)
-            continue;
-        bool is_sending = rank % (1 << (round+1));
-        if(is_sending)
-        {
-            // TODO: send data from start of R1 => rank - (1<<rank)
-        }
-        else
-        {
-            // TODO: recv data into the SECOND half of R1 <= rank + (1<<rank)
-            // TODO: qr factorization from R1 => first half of R2
-            // TODO: swap R1 and R2
-        }
+        std::cout << "TSQR elapsed time: " << elapsed.count() << " ms\n";
     }
 
-    if(rank==0)
-    {
-        // TODO: print the solution
-    }
+    // std::vector<double> Q(height_per_rank * width, 0),
+    //     R1(2 * width * width, 0),
+    //     R2(2 * width * width, 0); // allocate double the space to recv
+
+    // // TODO: reduce A -> R1
+
+    // for (int round = 0; (1 << round) < world_size; round++)
+    // {
+    //     if (rank % (1 << round) != 0)
+    //         continue;
+    //     bool is_sending = rank % (1 << (round+1));
+    //     if(is_sending)
+    //     {
+    //         // TODO: send data from start of R1 => rank - (1<<rank)
+    //     }
+    //     else
+    //     {
+    //         // TODO: recv data into the SECOND half of R1 <= rank + (1<<rank)
+    //         // TODO: qr factorization from R1 => first half of R2
+    //         // TODO: swap R1 and R2
+    //     }
+    // }
+
+    // if(rank==0)
+    // {
+    //     // TODO: print the solution
+    // }
 
     // std::vector<double> r(width * width, 0.f);
     // std::vector<double> q(height * width, 0.f);
