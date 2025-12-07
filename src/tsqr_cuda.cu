@@ -11,47 +11,46 @@ __global__ void qr_on_blocks(double *A_global, double *R_global, int m, int n, i
 __global__ void qr_on_stacks(double *R_in, double *R_out, int num_blocks, int n);
 __device__ void qr_device(const int h, const int w, double *buf_in, double *buf_out, double *v);
 
+__device__  __host__ int round_up_divide(int x, int y) {
+    return (x + y - 1) / y;
+}
+
+__device__  __host__ int get_memory_size_qr(int m, int n) {
+    return m * n + m * m + m;
+}
+
 __global__ void qr_on_stacks(double *R_in, double *R_out, int num_blocks, int n)
 {
+    int block_id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    int block_id = blockIdx.x;
-    int idx = block_id * 2;
-
-    if (idx + 1 >= num_blocks)
+    if (2 * block_id > num_blocks)
         return;
 
-    double *R1 = R_in + idx * n * n;
-    // double *R2 = R1 + idx * n * n;
-    double *R2 = R_in + (idx + 1) * n * n;
+    double *R_in_local = R_in + block_id * 2 * n * n;
 
-    double *R12_out = R_out + block_id * n * n;
+    double *R_out_local = R_out + block_id * n * n;
 
     extern __shared__ char shared_mem[];
-    double *R12 = (double *)shared_mem;
+    double *v = (double *)shared_mem;
 
-    for (int i = 0; i < n; i++)
-    {
-        for (int j = 0; j < n; j++)
-        {
-            R12[i * n + j] = R1[i * n + j];
-        }
-    }
+    v += threadIdx.x * get_memory_size_qr(2 * n, n);
 
-    for (int i = 0; i < n; i++)
-    {
-        for (int j = 0; j < n; j++)
-        {
-            R12[n * n + i * n + j] = R2[i * n + j];
-        }
-    }
+    qr_device(2 * n, n, R_in_local, R_out_local, v);
+}
 
-    double *v = R12 + 2 * n * n;
-
-    qr_device(2 * n, n, R12, R12_out, v);
+template<typename T>
+__host__ __device__ void swap(T& a, T& b)
+{
+    T tmp = a;
+    a = b;
+    b = tmp;
 }
 
 void test_tsqr(std::vector<double> A, const int m, const int n, const int block_height)
-{
+{   
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+
     // inputs
     if (block_height <= 0 || block_height > m)
     {
@@ -59,7 +58,7 @@ void test_tsqr(std::vector<double> A, const int m, const int n, const int block_
         return;
     }
 
-    int num_blocks = (m + block_height - 1) / block_height;
+    int num_blocks = round_up_divide(m, block_height);
 
     std::cout << "TSQR Test\n";
     std::cout << "Matrix: " << m << " x " << n << "\n";
@@ -69,19 +68,30 @@ void test_tsqr(std::vector<double> A, const int m, const int n, const int block_
     /////////////////////////////////////////////////////////////////////////////////////////////////
 
     // allocate device memory
-    double *d_A, *d_R_blocks, *d_R_next = nullptr;
+    double *d_A, *d_R_blocks, *d_R_next;
 
     cudaMalloc(&d_A, sizeof(double) * m * n);
     cudaMalloc(&d_R_blocks, sizeof(double) * num_blocks * n * n); // Each block produces n x n R
-    // cudaMalloc(&d_R_stacked,  sizeof(double) * num_blocks * n * n);  // Stacked R matrices (num_blocks*n x n)
-    // cudaMalloc(&d_R_final,    sizeof(double) * n * n);               // Final R matrix
+    cudaMalloc(&d_R_next, sizeof(double) * num_blocks * n * n / 2); 
 
     // Copy input matrix to device
     cudaMemcpy(d_A, A.data(), sizeof(double) * m * n, cudaMemcpyHostToDevice);
 
-    size_t shared_size = (block_height + block_height * block_height + block_height * n) * sizeof(double);
-    qr_on_blocks<<<num_blocks, 1, 64 * shared_size>>>(d_A, d_R_blocks, block_height, n, block_height);
+    // print_matrix_kernel<<<1,1>>>(d_A, m, n);
+
+    size_t shared_size = get_memory_size_qr(block_height, n) * sizeof(double);
+    if (THREAD_PER_BLOCK * shared_size > prop.sharedMemPerBlock) {
+        std::cerr << "Shared memory " << THREAD_PER_BLOCK * shared_size << " exceeds device limit\n";
+        cudaFree(d_A);
+        cudaFree(d_R_blocks);
+        cudaFree(d_R_next);
+        return;
+    }
+    printf("shared_size = %zu\n", shared_size);
+    qr_on_blocks<<<round_up_divide(num_blocks, THREAD_PER_BLOCK), THREAD_PER_BLOCK, 
+                    THREAD_PER_BLOCK * shared_size>>>(d_A, d_R_blocks, m, n, block_height);
     cudaDeviceSynchronize();
+    // print_matrix_kernel<<<1, 1>>>(d_R_blocks, num_blocks * n, n);
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
@@ -97,14 +107,18 @@ void test_tsqr(std::vector<double> A, const int m, const int n, const int block_
     {
         num_blocks /= 2;
 
-        cudaMalloc(&d_R_next, sizeof(double) * num_blocks * n * n);
-
-        size_t shared_mem_reduce = (n + 2 * n * n) * sizeof(double);
-        qr_on_stacks<<<num_blocks, 1, 64 * shared_mem_reduce>>>(d_R_blocks, d_R_next, num_blocks * 2, n);
+        size_t shared_mem_reduce = get_memory_size_qr(2 * n, n) * sizeof(double);
+        if (THREAD_PER_BLOCK * shared_mem_reduce > prop.sharedMemPerBlock) {
+            std::cerr << "Shared memory reduce " << THREAD_PER_BLOCK * shared_mem_reduce << " exceeds device limit\n";
+            cudaFree(d_A);
+            cudaFree(d_R_blocks);
+            cudaFree(d_R_next);
+            return;
+        }
+        qr_on_stacks<<<round_up_divide(num_blocks, THREAD_PER_BLOCK), THREAD_PER_BLOCK, 
+                        THREAD_PER_BLOCK * shared_mem_reduce>>>(d_R_blocks, d_R_next, num_blocks * 2, n);
         cudaDeviceSynchronize();
-
-        cudaFree(d_R_blocks);
-        d_R_blocks = d_R_next;
+        swap(d_R_blocks, d_R_next);
     }
 
     // print_matrix(Matrix(d_R_blocks, n, n));
@@ -130,17 +144,19 @@ void test_tsqr(std::vector<double> A, const int m, const int n, const int block_
 
 __global__ void qr_on_blocks(double *A_global, double *R_global, int m, int n, int block_height)
 {
-    int block_id = blockIdx.x;
+    
+    int block_id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (block_id * block_height >= m) return;
 
-    int start_id = block_id * block_height * n;
-
-    double *A_block = A_global + start_id;
+    double *A_block = A_global + block_id * block_height * n;
     double *R_block = R_global + block_id * n * n;
 
     extern __shared__ char shared_mem[];
     double *v = (double *)shared_mem; // size m
 
-    qr_device(m, n, A_block, R_block, v);
+    v += threadIdx.x * get_memory_size_qr(block_height, n);
+
+    qr_device(block_height, n, A_block, R_block, v);
 }
 
 __device__ void qr_device(const int h, const int w, double *buf_in, double *buf_out, double *v)
@@ -153,8 +169,6 @@ __device__ void qr_device(const int h, const int w, double *buf_in, double *buf_
     double *R_full = buf_in; // Use input buffer as R
 
     // allocate temporary storage for Householder vectors and matrices
-    // extern __shared__ char shared_mem[];
-    // double *v = (double*)shared_mem;  // size m
     double *H_data = v + m;          // size m*m
     double *temp_R = H_data + m * m; // size m*n
 
@@ -165,7 +179,6 @@ __device__ void qr_device(const int h, const int w, double *buf_in, double *buf_
     // QR factorization
     for (int k = 0; k < n && k < m; k++)
     {
-
         // norm of column k (from row k to m)
         double x_norm = 0.0;
         for (int i = k; i < m; i++)
@@ -227,6 +240,8 @@ __device__ void qr_device(const int h, const int w, double *buf_in, double *buf_
                 R(i, j) = temp_R_mat(i, j);
             }
         }
+
+        // print_matrix(temp_R_mat);
     }
 
     // Extract upper triangular R (n x n)
@@ -237,4 +252,5 @@ __device__ void qr_device(const int h, const int w, double *buf_in, double *buf_
             buf_out[i * n + j] = R(i, j);
         }
     }
+
 }

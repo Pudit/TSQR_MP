@@ -2,6 +2,9 @@
 
 #include <cuda_runtime.h>
 
+#ifndef THREAD_PER_BLOCK 
+#define THREAD_PER_BLOCK 32
+#endif
 
 void check_cuda();
 

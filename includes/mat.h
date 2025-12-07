@@ -102,3 +102,12 @@ inline __device__  __host__ void print_matrix(Matrix A) {
     }
 }
 
+__global__ void print_matrix_kernel(double* d, int h, int w) {
+    int block_id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (block_id != 0)
+        return;
+
+    Matrix A(d, h, w);
+    print_matrix(A);
+}
+
