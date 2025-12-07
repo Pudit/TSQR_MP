@@ -5,6 +5,8 @@
 #include "tsqr_cuda.h"
 // #include "qr_cuda.h"
 #include <random>
+#include <chrono>
+
 
 inline std::vector<double> generate_random_matrix(int m, int n, int seed)
 {
@@ -153,7 +155,11 @@ int main(int argc, char *argv[])
     //     // 15,16,
     // };
 
+    auto start = std::chrono::high_resolution_clock::now();
+
     std::vector<double> A_host = generate_random_matrix(h, w, 1);
+
+
 
     // print A host
     // for (int i = 0; i < h; i++)
@@ -168,6 +174,11 @@ int main(int argc, char *argv[])
 
     // test_qr(A_host, h, w);
     test_tsqr(A_host, h, w, block_height);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    std::cout << "TSQR elapsed time: " << elapsed.count() << " ms\n";
 
     // Print Q
     // std::cout << "Q:\n";
