@@ -3,15 +3,18 @@
 #include <vector>
 #include <math.h>
 #include <iostream>
+#include <cuda_runtime.h>
 
 struct Matrix 
 {
     double *ptr;
-    size_t h, w;
+    int h, w;
     bool is_transpose;
 
-    Matrix(double *ptr, size_t h, size_t w): ptr(ptr), h(h), w(w), is_transpose(false) {}
+    __host__ __device__
+    Matrix(double *ptr, int h, int w): ptr(ptr), h(h), w(w), is_transpose(false) {}
 
+    __host__ __device__
     double& operator()(int i, int j)
     {
         if (!is_transpose)
@@ -20,6 +23,7 @@ struct Matrix
             return ptr[j*h + i];
     }
 
+    __host__ __device__
     Matrix T() {
         Matrix m(ptr, w, h);
         m.is_transpose = !is_transpose;
@@ -35,7 +39,7 @@ params
 return 
     C = A x B = R ^ (m x k) x (k x n) = R ^ (m x n)
 */
-inline void matmul(Matrix A, Matrix B, Matrix C) 
+__device__ inline void matmul_device(Matrix A, Matrix B, Matrix C) 
 {
     size_t m = A.h; 
     size_t k = A.w;
@@ -58,14 +62,22 @@ inline void matmul(Matrix A, Matrix B, Matrix C)
     }
 }
 
-inline std::vector<double> identity(int n) {
-    std::vector<double> v(n*n, 0);
-    
-    Matrix m(v.data(), n, n);
-    for(int i = 0; i < n; i++) m(i, i) = 1;
-
-    return v;
+__device__ inline void identity_device(double *buf, int n) {
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            buf[i * n + j] = (i == j) ? 1.0 : 0.0;
+        }
+    }
 }
+
+// inline std::vector<double> identity(int n) {
+//     std::vector<double> v(n*n, 0);
+    
+//     Matrix m(v.data(), n, n);
+//     for(int i = 0; i < n; i++) m(i, i) = 1;
+
+//     return v;
+// }
 
 // // identity (n x n)
 // inline Matrix identity(int n) {
@@ -78,39 +90,15 @@ inline std::vector<double> identity(int n) {
 
 
 // print matrix 
-inline void print_matrix( Matrix A) {
+inline __device__  __host__ void print_matrix(Matrix A) {
+    printf("\nh: %d, w: %d\n", A.h, A.w);
     for (int i = 0; i < A.h; i++) {
         for (int j = 0; j < A.w; j++) {
-            std::cout << A(i, j) << " ";
+            // std::cout << A(i, j) << " ";
+            printf("%lf ", A(i, j));
         }
-        std::cout << "\n";
+        // std::cout << "\n";
+        printf("\n");
     }
 }
 
-
-// 
-// inline Matrix partial_diag_multiply(const Matrix &Q0, const Matrix &Q1, const Matrix &Q01) {
-//     int m = Q0.size();
-//     int n = Q0[0].size();
-    
-//     Matrix Q_out(2*m, std::vector<double>(Q01[0].size(), 0.0));
-//     // Q01[:m] = matmul(Q0, Q01[:m]);
-//     for (int i = 0; i < m; i++) {
-//         for (int k = 0; k < n; k++) {
-//             for(int j = 0; j < Q01[0].size(); j++) {
-//                 Q_out[i][j] += Q0[i][k] * Q01[k][j];
-//             }
-//         }
-//     }
-
-//     // Q01[m:]
-//     for (int i = 0; i < m; i++) {
-//         for (int k = 0; k < n; k++) {
-//             for(int j = 0; j < Q01[0].size(); j++) {
-//                 Q_out[i + m][j] += Q1[i][k] * Q01[k + n][j];      
-//             }
-//         }
-//     }
-    
-//     return Q_out;
-// }
