@@ -85,8 +85,8 @@ int main(int argc, char *argv[]) {
     qr(A_full, Q, R);
 
     auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 
     print_matrix(R);
-    std::cout << "TSQR elapsed time: " << elapsed.count() << " ms\n";
+    std::cout << "TSQR elapsed time: " << elapsed.count() << " us\n";
 }
