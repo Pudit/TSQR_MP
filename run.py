@@ -5,7 +5,7 @@ import subprocess
 for height in [2**i for i in range(2, 14+1)]:
     for width in [2, 4]:
         # print(num_thread, width)
-        res = subprocess.run(['./qr_cuda', '-w', str(width), '-h', str(height)], 
+        res = subprocess.run(['./qr_demo', '-w', str(width), '-h', str(height)], 
                         capture_output=True,
                         text=True,)
         # print(res.stdout)
